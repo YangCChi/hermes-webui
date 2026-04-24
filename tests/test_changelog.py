@@ -26,6 +26,7 @@ class ChangelogPageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         html = response.text
         self.assertIn('版本更新日志', html)
+        self.assertIn('v0.0.2', html)
         self.assertIn('v0.0.1', html)
         self.assertIn('更新时间', html)
         self.assertIn('更新内容', html)
@@ -44,10 +45,11 @@ class ChangelogPageTests(unittest.TestCase):
         self.assertIn('versions', data)
         self.assertGreaterEqual(len(data['versions']), 1)
         latest = data['versions'][0]
-        self.assertEqual(latest['version'], 'v0.0.1')
+        self.assertEqual(latest['version'], 'v0.0.2')
         self.assertIn('updated_at', latest)
         self.assertIn('changes', latest)
-        self.assertTrue(any('从 0.0.1 开始记录' in item for item in latest['changes']))
+        self.assertTrue(any('发送图片' in item for item in latest['changes']))
+        self.assertTrue(any(version['version'] == 'v0.0.1' for version in data['versions']))
 
 
 if __name__ == '__main__':
