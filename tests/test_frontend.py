@@ -1,5 +1,9 @@
 import importlib.util
 from pathlib import Path
+import asyncio
+import re
+import subprocess
+import tempfile
 import unittest
 
 APP_PATH = Path('/opt/hermes-webui-git/app.py')
@@ -29,6 +33,21 @@ class FrontendBehaviorTests(unittest.TestCase):
         self.assertIn('composer', index_source)
         self.assertIn('New chat', index_source)
         self.assertIn('ChatGPT', body + index_source)
+
+    def test_rendered_inline_script_is_valid_javascript(self):
+        module = load_app_module()
+        module.SETTINGS['WEBUI_AUTH_ENABLED'] = 'false'
+        html = asyncio.run(module.index(type('Req', (), {'session': {}})()))
+        script_match = re.search(r'<script>(.*?)</script>', html, re.S)
+        self.assertIsNotNone(script_match)
+        script = script_match.group(1)
+        with tempfile.NamedTemporaryFile('w', suffix='.js', delete=False) as tmp:
+            tmp.write(script)
+            script_path = tmp.name
+        result = subprocess.run(['node', '--check', script_path], text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("join('\n')", script)
+        self.assertIn("join('\\n')", script)
 
 
 if __name__ == '__main__':
