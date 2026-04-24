@@ -10,6 +10,8 @@ import mimetypes
 import os
 import re
 import secrets
+import sqlite3
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote
@@ -26,10 +28,13 @@ BASE_DIR = Path('/opt/hermes-webui')
 ENV_FILE = BASE_DIR / '.env'
 HERMES_ENV_FILE = Path('/root/.hermes/.env')
 HISTORY_FILE = BASE_DIR / 'chat-history.json'
+ACTIVITY_DB_FILE = Path('/root/.hermes/state.db')
+ACTIVITY_SOURCE = 'webui'
 MAX_HISTORY_MESSAGES = 200
+MAX_ACTIVITY_MESSAGES = 120
 DEFAULT_API_BASE = 'http://127.0.0.1:8642'
 
-APP_VERSION = 'v0.0.6'
+APP_VERSION = 'v0.0.7'
 MEDIA_TOKEN_PREFIX='local:'
 MEDIA_REFERENCE_RE = re.compile(r'(?m)^MEDIA:(?P<path>/[^\r\n]+)\s*$')
 ALLOWED_MEDIA_DIRS = (Path('/tmp'), Path('/var/tmp'), BASE_DIR / 'media')
@@ -39,6 +44,15 @@ MAX_API_BODY_BYTES = 900_000
 HISTORICAL_IMAGE_PLACEHOLDER = '[历史图片已省略以控制请求大小]'
 LOCAL_MEDIA_PLACEHOLDER = '[图片已在网页显示，未再次发送给模型]'
 CHANGELOG = [
+    {
+        'version': 'v0.0.7',
+        'updated_at': '2026-04-24',
+        'changes': [
+            '新增过程查看页，可在 WebUI 中查看 Hermes 最近做过什么以及当前活动。',
+            '新增 /api/activity 接口，从 Hermes 状态库读取最近输入、输出和工具调用记录。',
+            '聊天页会记录 WebUI 发出的用户消息和助手回复，便于离开终端后回看进度。',
+        ],
+    },
     {
         'version': 'v0.0.6',
         'updated_at': '2026-04-24',
@@ -356,6 +370,156 @@ def append_history(*messages: dict[str, Any]) -> list[NormalizedMessage]:
     history.extend(messages)
     return write_history(history)
 
+
+
+def init_activity_db(path: Path = ACTIVITY_DB_FILE) -> None:
+    """Create the minimal Hermes state schema needed for local WebUI activity logging."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                source TEXT NOT NULL,
+                user_id TEXT,
+                model TEXT,
+                model_config TEXT,
+                system_prompt TEXT,
+                parent_session_id TEXT,
+                started_at REAL NOT NULL,
+                ended_at REAL,
+                end_reason TEXT,
+                message_count INTEGER DEFAULT 0,
+                tool_call_count INTEGER DEFAULT 0
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL REFERENCES sessions(id),
+                role TEXT NOT NULL,
+                content TEXT,
+                tool_call_id TEXT,
+                tool_calls TEXT,
+                tool_name TEXT,
+                timestamp REAL NOT NULL,
+                token_count INTEGER,
+                finish_reason TEXT
+            )
+            """
+        )
+        conn.commit()
+
+
+def activity_session_id() -> str:
+    return f"webui-{time.strftime('%Y%m%d')}"
+
+
+def truncate_activity_content(content: Any, max_chars: int = 4000) -> str:
+    if isinstance(content, str):
+        text = content
+    else:
+        text = json.dumps(content, ensure_ascii=False)
+    if len(text) > max_chars:
+        return text[:max_chars] + '…'
+    return text
+
+
+def record_activity_message(role: str, content: Any, *, tool_name: str | None = None) -> None:
+    """Append a WebUI-originated activity event to Hermes' state DB when available."""
+    try:
+        init_activity_db(ACTIVITY_DB_FILE)
+        session_id = activity_session_id()
+        now = time.time()
+        text = truncate_activity_content(content)
+        with sqlite3.connect(ACTIVITY_DB_FILE) as conn:
+            conn.execute(
+                """
+                INSERT INTO sessions (id, source, model, started_at, message_count, tool_call_count)
+                VALUES (?, ?, ?, ?, 0, 0)
+                ON CONFLICT(id) DO NOTHING
+                """,
+                (session_id, ACTIVITY_SOURCE, SETTINGS['HERMES_MODEL'], now),
+            )
+            conn.execute(
+                """
+                INSERT INTO messages (session_id, role, content, tool_name, timestamp)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (session_id, role, text, tool_name, now),
+            )
+            conn.execute(
+                """
+                UPDATE sessions
+                SET message_count = (SELECT COUNT(*) FROM messages WHERE session_id = ?),
+                    tool_call_count = (SELECT COUNT(*) FROM messages WHERE session_id = ? AND tool_name IS NOT NULL)
+                WHERE id = ?
+                """,
+                (session_id, session_id, session_id),
+            )
+            conn.commit()
+    except Exception:
+        # Activity logging should never break chat.
+        return
+
+
+def format_activity_time(ts: Any) -> str:
+    try:
+        return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(float(ts)))
+    except Exception:
+        return ''
+
+
+def read_activity(limit: int = MAX_ACTIVITY_MESSAGES) -> dict[str, Any]:
+    limit = max(1, min(int(limit or MAX_ACTIVITY_MESSAGES), 300))
+    if not ACTIVITY_DB_FILE.exists():
+        return {'current_session_id': activity_session_id(), 'sessions': [], 'messages': []}
+    try:
+        with sqlite3.connect(f'file:{ACTIVITY_DB_FILE}?mode=ro', uri=True) as conn:
+            conn.row_factory = sqlite3.Row
+            sessions = [dict(row) for row in conn.execute(
+                """
+                SELECT id, source, model, started_at, ended_at, end_reason,
+                       COALESCE(message_count, 0) AS message_count,
+                       COALESCE(tool_call_count, 0) AS tool_call_count
+                FROM sessions
+                ORDER BY COALESCE(ended_at, started_at) DESC
+                LIMIT 12
+                """
+            )]
+            rows = [dict(row) for row in conn.execute(
+                """
+                SELECT m.id, m.session_id, m.role, m.content, m.tool_name, m.timestamp, s.source
+                FROM messages m
+                LEFT JOIN sessions s ON s.id = m.session_id
+                ORDER BY m.timestamp DESC, m.id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )]
+    except Exception as exc:
+        return {'current_session_id': activity_session_id(), 'sessions': [], 'messages': [], 'error': str(exc)}
+    for session in sessions:
+        session['started_at_text'] = format_activity_time(session.get('started_at'))
+        session['ended_at_text'] = format_activity_time(session.get('ended_at')) if session.get('ended_at') else ''
+        session['active'] = not bool(session.get('ended_at'))
+    messages = []
+    for row in reversed(rows):
+        content = row.get('content') or ''
+        messages.append({
+            'id': row.get('id'),
+            'session_id': row.get('session_id'),
+            'source': row.get('source') or '',
+            'role': row.get('role') or '',
+            'tool_name': row.get('tool_name') or '',
+            'content': content,
+            'timestamp': row.get('timestamp'),
+            'time': format_activity_time(row.get('timestamp')),
+        })
+    return {'current_session_id': activity_session_id(), 'sessions': sessions, 'messages': messages}
+
 SETTINGS = load_settings()
 app = FastAPI(title='Hermes WebUI')
 app.add_middleware(SessionMiddleware, secret_key=SETTINGS['WEBUI_SESSION_SECRET'], same_site='lax')
@@ -386,6 +550,7 @@ async def index(request: Request) -> str:
       <aside class='sidebar'>
         <button class='new-chat' type='button' onclick='clearHistory()'><span>＋</span><span>New chat</span></button>
         <div class='side-title'>Hermes Agent</div>
+        <a class='side-link' href='/activity'>过程查看</a>
         <a class='side-link' href='/settings'>设置</a>
         <a class='side-link' href='/changelog'>版本更新日志</a>
         <div class='side-footer'>Version: {APP_VERSION}<br>ChatGPT-style interface<br>API: {SETTINGS['HERMES_API_BASE']}<br>Model: {SETTINGS['HERMES_MODEL']}<br>Key: {mask_secret(SETTINGS['HERMES_API_KEY'])}</div>
@@ -450,6 +615,52 @@ async def index(request: Request) -> str:
     """
     return page_shell(body)
 
+
+
+@app.get('/activity', response_class=HTMLResponse)
+async def activity_page(request: Request) -> str:
+    if not is_logged_in(request):
+        return RedirectResponse('/login', status_code=302)
+    body = """
+    <div class='settings-page activity-page'>
+      <header class='settings-hero'>
+        <a class='back-link' href='/'>← 返回聊天</a>
+        <h1>Hermes 活动</h1>
+        <p class='muted'>这里会自动刷新 Hermes 最近的输入、输出和工具调用记录。你离开终端后，可以用这个页面回看过去做了什么、现在大概进行到哪里。</p>
+        <p class='muted small'>结构化接口：<code>/api/activity</code>；每 5 秒自动刷新。</p>
+      </header>
+      <section class='settings-grid'>
+        <article class='settings-card'>
+          <h2>最近会话</h2>
+          <div id='sessionList' class='activity-session-list muted'>加载中...</div>
+        </article>
+        <article class='settings-card'>
+          <h2>当前状态</h2>
+          <p id='activitySummary' class='muted'>正在读取 Hermes 状态库...</p>
+        </article>
+      </section>
+      <section class='settings-changelog'>
+        <h2>输入 / 输出 / 工具调用</h2>
+        <div id='activityList' class='activity-list'>加载中...</div>
+      </section>
+    </div>
+    <script>
+    const sessionList=document.getElementById('sessionList'), activityList=document.getElementById('activityList'), activitySummary=document.getElementById('activitySummary');
+    function escapeHtml(text){ return String(text||'').replace(/[&<>\"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c])); }
+    function roleLabel(item){ if(item.tool_name) return '工具：'+item.tool_name; if(item.role==='user') return '用户输入'; if(item.role==='assistant') return '助手输出'; return item.role||'记录'; }
+    async function loadActivity(){
+      try{
+        const r=await fetch('/api/activity'); const j=await r.json(); if(!r.ok) throw new Error(j.error||r.statusText);
+        const sessions=j.sessions||[], messages=j.messages||[];
+        activitySummary.textContent=messages.length ? `最新记录：${messages[messages.length-1].time||''}，共显示 ${messages.length} 条。` : '还没有活动记录。';
+        sessionList.innerHTML=sessions.length ? sessions.map(s=>`<div class='activity-session'><strong>${escapeHtml(s.source||'session')}</strong><span>${escapeHtml(s.started_at_text||'')}</span><span>${s.active?'进行中':'已结束'} · ${s.message_count||0} 条</span></div>`).join('') : '<p class="muted">暂无会话。</p>';
+        activityList.innerHTML=messages.length ? messages.map(item=>`<article class='activity-item ${escapeHtml(item.role)}'><div class='activity-meta'><span>${escapeHtml(roleLabel(item))}</span><span>${escapeHtml(item.time)}</span><span>${escapeHtml(item.source)}</span></div><pre>${escapeHtml(item.content)}</pre></article>`).join('') : '<p class="muted">暂无活动。</p>';
+      }catch(e){ activitySummary.textContent='读取失败：'+e.message; }
+    }
+    loadActivity(); setInterval(loadActivity,5000);
+    </script>
+    """
+    return page_shell(body)
 
 
 @app.get('/settings', response_class=HTMLResponse)
@@ -519,6 +730,7 @@ async def api_settings(request: Request) -> JSONResponse:
         'api_base': SETTINGS['HERMES_API_BASE'],
         'model': SETTINGS['HERMES_MODEL'],
         'models_endpoint': '/api/models',
+        'activity_endpoint': '/api/activity',
         'api_key': mask_secret(SETTINGS['HERMES_API_KEY']),
         'max_history_messages': MAX_HISTORY_MESSAGES,
         'changelog': CHANGELOG,
@@ -612,6 +824,13 @@ async def api_models(request: Request) -> JSONResponse:
         return JSONResponse({'current_model': SETTINGS['HERMES_MODEL'], 'models': [SETTINGS['HERMES_MODEL']], 'error': str(exc)}, status_code=200)
 
 
+@app.get('/api/activity')
+async def api_activity(request: Request, limit: int = MAX_ACTIVITY_MESSAGES) -> JSONResponse:
+    if not is_logged_in(request):
+        return JSONResponse({'error': 'unauthorized'}, status_code=401)
+    return JSONResponse(read_activity(limit))
+
+
 @app.get('/api/health')
 async def api_health(request: Request) -> JSONResponse:
     if not is_logged_in(request):
@@ -674,6 +893,8 @@ async def api_chat(request: Request) -> JSONResponse:
         raw_content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
         content = normalize_assistant_content(raw_content) or ''
         append_history(messages[-1], {'role': 'assistant', 'content': content})
+        record_activity_message('user', messages[-1].get('content', ''))
+        record_activity_message('assistant', content)
         return JSONResponse({'content': content, 'raw': data})
     except Exception as exc:
         return JSONResponse({'error': str(exc)}, status_code=500)
