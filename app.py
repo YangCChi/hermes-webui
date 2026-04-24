@@ -119,7 +119,7 @@ app = FastAPI(title='Hermes WebUI')
 app.add_middleware(SessionMiddleware, secret_key=SETTINGS['WEBUI_SESSION_SECRET'], same_site='lax')
 
 CSS = """
-:root{color-scheme:dark;--bg:#0b1020;--panel:#111a2e;--soft:#1a2742;--text:#e7edf8;--muted:#95a3b8;--accent:#8b5cf6;--good:#22c55e;--bad:#ef4444}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top left,#1b2550,#0b1020 45%);font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--text)}main{max-width:980px;margin:0 auto;padding:28px}.card{background:rgba(17,26,46,.88);border:1px solid rgba(255,255,255,.08);border-radius:22px;box-shadow:0 24px 80px rgba(0,0,0,.35);padding:24px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px}.brand{font-size:26px;font-weight:800;letter-spacing:-.04em}.muted{color:var(--muted)}.pill{display:inline-flex;gap:8px;align-items:center;background:var(--soft);border-radius:999px;padding:8px 12px;color:var(--muted);font-size:13px}.dot{width:9px;height:9px;border-radius:99px;background:var(--bad)}.dot.ok{background:var(--good)}#chat{height:58vh;overflow:auto;padding:18px;background:rgba(0,0,0,.16);border-radius:16px;border:1px solid rgba(255,255,255,.06);margin:18px 0}.msg{margin:0 0 14px;display:flex}.bubble{max-width:82%;white-space:pre-wrap;line-height:1.52;padding:13px 15px;border-radius:16px}.user{justify-content:flex-end}.user .bubble{background:linear-gradient(135deg,#7c3aed,#2563eb)}.assistant .bubble{background:#18233b}.sys .bubble{background:transparent;color:var(--muted);border:1px dashed rgba(255,255,255,.12)}form.row{display:flex;gap:10px}textarea,input{width:100%;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:#0d1527;color:var(--text);padding:13px 14px;font:inherit}textarea{height:86px;resize:vertical}button{border:0;border-radius:14px;background:linear-gradient(135deg,#8b5cf6,#2563eb);color:white;font-weight:700;padding:0 20px;cursor:pointer}button.secondary{background:#24314f}.login{max-width:430px;margin:12vh auto}.small{font-size:13px}.error{color:#fca5a5}.toolbar{display:flex;gap:8px;align-items:center}a{color:#c4b5fd;text-decoration:none}
+:root{color-scheme:light;--bg:#f7f7f8;--sidebar:#202123;--sidebar-soft:#2a2b32;--surface:#ffffff;--surface-alt:#f7f7f8;--border:#e5e5e5;--text:#202123;--muted:#6e6e80;--assistant:#f7f7f8;--user:#ffffff;--accent:#10a37f;--accent-dark:#0d8f6f;--danger:#ef4444;--good:#10a37f}*{box-sizing:border-box}html,body{height:100%}body{margin:0;background:var(--bg);font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--text)}main{height:100%;padding:0}.chatgpt-shell{height:100vh;display:grid;grid-template-columns:260px minmax(0,1fr);background:var(--bg)}.sidebar{background:var(--sidebar);color:#ececf1;display:flex;flex-direction:column;padding:12px;gap:12px}.new-chat{height:44px;border:1px solid rgba(255,255,255,.22);border-radius:8px;background:transparent;color:#ececf1;display:flex;align-items:center;gap:10px;padding:0 12px;font-weight:500}.side-title{font-size:13px;color:#c5c5d2;padding:8px 4px}.side-footer{margin-top:auto;color:#9ca3af;font-size:12px;line-height:1.5;padding:8px 4px}.main-chat{min-width:0;display:flex;flex-direction:column;height:100vh}.topbar{height:56px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 20px;background:rgba(255,255,255,.8);backdrop-filter:blur(12px)}.brand{font-size:17px;font-weight:650}.muted{color:var(--muted)}.small{font-size:13px}.pill{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:7px 10px;color:var(--muted);font-size:13px;background:#fff}.dot{width:8px;height:8px;border-radius:99px;background:var(--danger)}.dot.ok{background:var(--good)}#chat{flex:1;overflow:auto;padding:0;background:var(--bg)}.msg{display:flex;border-bottom:1px solid rgba(0,0,0,.04)}.msg-inner{width:min(820px,100%);margin:0 auto;display:grid;grid-template-columns:38px minmax(0,1fr);gap:18px;padding:24px 20px}.avatar{width:32px;height:32px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:white;flex:none}.user .avatar{background:#5436da}.assistant .avatar{background:var(--accent)}.sys .avatar{background:#8e8ea0}.bubble{white-space:pre-wrap;line-height:1.68;font-size:15.5px;overflow-wrap:anywhere}.assistant{background:var(--assistant)}.user,.sys{background:var(--user)}.sys .bubble{color:var(--muted)}.composer-wrap{border-top:1px solid var(--border);background:linear-gradient(180deg,rgba(247,247,248,0),var(--bg) 18%);padding:18px 18px 24px}.composer{width:min(820px,100%);margin:0 auto;position:relative;border:1px solid #d9d9e3;border-radius:14px;background:#fff;box-shadow:0 8px 28px rgba(0,0,0,.08);display:flex;align-items:flex-end;padding:10px 52px 10px 14px}.composer textarea{width:100%;min-height:28px;max-height:180px;height:28px;resize:none;border:0;outline:0;background:transparent;color:var(--text);font:inherit;line-height:1.5;padding:2px 0}.send-button{position:absolute;right:10px;bottom:9px;width:34px;height:34px;border:0;border-radius:8px;background:var(--accent);color:white;font-weight:800;cursor:pointer}.send-button:disabled{background:#d9d9e3;cursor:not-allowed}.hint{width:min(820px,100%);margin:8px auto 0;text-align:center;color:var(--muted);font-size:12px}.login{max-width:430px;margin:12vh auto;background:white;border:1px solid var(--border);border-radius:16px;box-shadow:0 16px 50px rgba(0,0,0,.08);padding:24px}input{width:100%;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--text);padding:13px 14px;font:inherit}button{font:inherit}.login button{border:0;border-radius:10px;background:var(--accent);color:white;font-weight:700;cursor:pointer}.error{color:#dc2626}a{color:#0d8f6f;text-decoration:none}@media(max-width:760px){.chatgpt-shell{grid-template-columns:1fr}.sidebar{display:none}.topbar{padding:0 14px}.msg-inner{grid-template-columns:32px minmax(0,1fr);gap:12px;padding:20px 14px}.composer-wrap{padding:14px 12px 18px}}
 """
 
 
@@ -140,28 +140,42 @@ async def index(request: Request) -> str:
     if not is_logged_in(request):
         return RedirectResponse('/login', status_code=302)
     body = f"""
-    <section class='card'>
-      <div class='top'>
-        <div><div class='brand'>Hermes WebUI</div><div class='muted small'>和服务器上的 Hermes Agent 直接对话</div></div>
-        <div class='toolbar'><span id='status' class='pill'><span class='dot'></span><span>checking</span></span></div>
-      </div>
-      <div class='muted small' style='margin-top:12px'>API: {SETTINGS['HERMES_API_BASE']} · Model: {SETTINGS['HERMES_MODEL']} · Key: {mask_secret(SETTINGS['HERMES_API_KEY'])}</div>
-      <div id='chat'><div class='msg sys'><div class='bubble'>已连接 WebUI。你可以在这里向 Hermes 发消息；Hermes 仍然能使用服务器工具。</div></div></div>
-      <form id='sendForm' class='row'>
-        <textarea id='message' placeholder='输入你的问题，例如：检查服务器磁盘空间' required autofocus></textarea>
-        <button id='sendBtn' type='submit'>发送</button>
-      </form>
-    </section>
+    <div class='chatgpt-shell'>
+      <aside class='sidebar'>
+        <button class='new-chat' type='button' onclick='clearHistory()'><span>＋</span><span>New chat</span></button>
+        <div class='side-title'>Hermes Agent</div>
+        <div class='side-footer'>ChatGPT-style interface<br>API: {SETTINGS['HERMES_API_BASE']}<br>Model: {SETTINGS['HERMES_MODEL']}<br>Key: {mask_secret(SETTINGS['HERMES_API_KEY'])}</div>
+      </aside>
+      <section class='main-chat'>
+        <header class='topbar'>
+          <div><div class='brand'>Hermes WebUI</div><div class='muted small'>模仿 ChatGPT 的简洁对话界面</div></div>
+          <span id='status' class='pill'><span class='dot'></span><span>checking</span></span>
+        </header>
+        <div id='chat'><div class='msg sys'><div class='msg-inner'><div class='avatar'>H</div><div class='bubble'>已连接 WebUI。你可以在这里向 Hermes 发消息；Hermes 仍然能使用服务器工具。</div></div></div></div>
+        <div class='composer-wrap'>
+          <form id='sendForm' class='composer'>
+            <textarea id='message' placeholder='Message Hermes...' required autofocus rows='1'></textarea>
+            <button id='sendBtn' class='send-button' type='submit' title='发送'>↑</button>
+          </form>
+          <div class='hint'>按 Enter 发送，Shift + Enter 换行</div>
+        </div>
+      </section>
+    </div>
     <script>
     const chat=document.getElementById('chat'), form=document.getElementById('sendForm'), msg=document.getElementById('message'), btn=document.getElementById('sendBtn'), statusEl=document.getElementById('status');
     const history=[];
-    function add(role, text){{ const wrap=document.createElement('div'); wrap.className='msg '+role; const b=document.createElement('div'); b.className='bubble'; b.textContent=text; wrap.appendChild(b); chat.appendChild(wrap); chat.scrollTop=chat.scrollHeight; return b; }}
-    function renderHistory(items){{ chat.innerHTML='<div class="msg sys"><div class="bubble">历史消息已加载。你可以继续上次的对话。</div></div>'; history.length=0; for(const item of items){{ history.push(item); add(item.role, item.content); }} }}
+    function avatarFor(role){{ return role==='user'?'你':(role==='assistant'?'H':'i'); }}
+    function add(role, text){{ const wrap=document.createElement('div'); wrap.className='msg '+role; const inner=document.createElement('div'); inner.className='msg-inner'; const avatar=document.createElement('div'); avatar.className='avatar'; avatar.textContent=avatarFor(role); const b=document.createElement('div'); b.className='bubble'; b.textContent=text; inner.appendChild(avatar); inner.appendChild(b); wrap.appendChild(inner); chat.appendChild(wrap); chat.scrollTop=chat.scrollHeight; return b; }}
+    function renderHistory(items){{ chat.innerHTML='<div class="msg sys"><div class="msg-inner"><div class="avatar">H</div><div class="bubble">历史消息已加载。你可以继续上次的对话。</div></div></div>'; history.length=0; for(const item of items){{ history.push(item); add(item.role, item.content); }} }}
     async function loadHistory(){{ try{{ const r=await fetch('/api/history'); const j=await r.json(); if(r.ok) renderHistory(j.messages||[]); }}catch(e){{ console.warn('history load failed', e); }} }}
+    async function clearHistory(){{ if(!confirm('清空当前历史消息？')) return; await fetch('/api/history/clear', {{method:'POST'}}); history.length=0; renderHistory([]); msg.focus(); }}
     async function health(){{ try{{ let r=await fetch('/api/health'); let j=await r.json(); statusEl.innerHTML='<span class="dot ok"></span><span>'+j.status+'</span>'; }}catch(e){{ statusEl.innerHTML='<span class="dot"></span><span>offline</span>'; }} }}
-    loadHistory(); health(); setInterval(health,15000);
+    function resizeComposer(){{ msg.style.height='auto'; msg.style.height=Math.min(msg.scrollHeight,180)+'px'; }}
+    msg.addEventListener('input', resizeComposer);
+    msg.addEventListener('keydown', e=>{{ if(e.key==='Enter' && !e.shiftKey){{ e.preventDefault(); form.requestSubmit(); }} }});
+    loadHistory(); health(); setInterval(health,15000); resizeComposer();
     form.addEventListener('submit', async e=>{{
-      e.preventDefault(); const text=msg.value.trim(); if(!text) return; msg.value=''; add('user', text); const b=add('assistant','思考中...'); btn.disabled=true;
+      e.preventDefault(); const text=msg.value.trim(); if(!text || btn.disabled) return; msg.value=''; resizeComposer(); add('user', text); const b=add('assistant','思考中...'); btn.disabled=true;
       try{{
         history.push({{role:'user', content:text}});
         const r=await fetch('/api/chat', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{messages:history}})}});
