@@ -51,13 +51,14 @@ class SettingsPageTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data['version'], 'v0.0.5')
+        self.assertEqual(data['version'], 'v0.0.6')
         self.assertEqual(data['api_base'], module.SETTINGS['HERMES_API_BASE'])
         self.assertEqual(data['model'], module.SETTINGS['HERMES_MODEL'])
+        self.assertEqual(data['models_endpoint'], '/api/models')
         self.assertNotEqual(data['api_key'], 'sk-test-secret-value')
         self.assertIn('...', data['api_key'])
         self.assertIn('changelog', data)
-        self.assertEqual(data['changelog'][0]['version'], 'v0.0.5')
+        self.assertEqual(data['changelog'][0]['version'], 'v0.0.6')
 
 
 if __name__ == '__main__':

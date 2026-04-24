@@ -29,7 +29,7 @@ HISTORY_FILE = BASE_DIR / 'chat-history.json'
 MAX_HISTORY_MESSAGES = 200
 DEFAULT_API_BASE = 'http://127.0.0.1:8642'
 
-APP_VERSION = 'v0.0.5'
+APP_VERSION = 'v0.0.6'
 MEDIA_TOKEN_PREFIX='local:'
 MEDIA_REFERENCE_RE = re.compile(r'(?m)^MEDIA:(?P<path>/[^\r\n]+)\s*$')
 ALLOWED_MEDIA_DIRS = (Path('/tmp'), Path('/var/tmp'), BASE_DIR / 'media')
@@ -39,6 +39,15 @@ MAX_API_BODY_BYTES = 900_000
 HISTORICAL_IMAGE_PLACEHOLDER = '[历史图片已省略以控制请求大小]'
 LOCAL_MEDIA_PLACEHOLDER = '[图片已在网页显示，未再次发送给模型]'
 CHANGELOG = [
+    {
+        'version': 'v0.0.6',
+        'updated_at': '2026-04-24',
+        'changes': [
+            '顶部工具栏新增模型选择器，可从当前 Hermes API 可用模型中选择对话模型。',
+            '新增 /api/models 接口，自动读取 OpenAI 兼容 /v1/models 列表。',
+            '发送消息时会携带当前选择的模型，后端按选择转发给 Hermes API。',
+        ],
+    },
     {
         'version': 'v0.0.5',
         'updated_at': '2026-04-24',
@@ -138,6 +147,35 @@ def mask_secret(value: str) -> str:
     if len(value) < 12:
         return '[set]'
     return f'{value[:4]}...{value[-4:]}'
+
+
+def normalize_model_id(value: Any) -> str:
+    model = str(value or '').strip()
+    if not model:
+        return SETTINGS['HERMES_MODEL']
+    return model[:120]
+
+
+def parse_models_response(data: Any) -> list[str]:
+    models: list[str] = []
+    if isinstance(data, dict):
+        items = data.get('data') or data.get('models') or []
+    elif isinstance(data, list):
+        items = data
+    else:
+        items = []
+    for item in items:
+        model_id = ''
+        if isinstance(item, dict):
+            model_id = str(item.get('id') or item.get('name') or '').strip()
+        else:
+            model_id = str(item).strip()
+        if model_id and model_id not in models:
+            models.append(model_id)
+    default_model = SETTINGS['HERMES_MODEL']
+    if default_model and default_model not in models:
+        models.insert(0, default_model)
+    return models or [default_model]
 
 
 def normalize_content(content: Any) -> MessageContent | None:
@@ -323,7 +361,7 @@ app = FastAPI(title='Hermes WebUI')
 app.add_middleware(SessionMiddleware, secret_key=SETTINGS['WEBUI_SESSION_SECRET'], same_site='lax')
 
 CSS = """
-:root{color-scheme:light;--bg:#f7f7f8;--sidebar:#202123;--sidebar-soft:#2a2b32;--surface:#ffffff;--surface-alt:#f7f7f8;--border:#e5e5e5;--text:#202123;--muted:#6e6e80;--assistant:#f7f7f8;--user:#ffffff;--accent:#10a37f;--accent-dark:#0d8f6f;--danger:#ef4444;--good:#10a37f}*{box-sizing:border-box}html,body{height:100%}body{margin:0;background:var(--bg);font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--text)}main{height:100%;padding:0}.chatgpt-shell{height:100vh;display:grid;grid-template-columns:260px minmax(0,1fr);background:var(--bg)}.sidebar{background:var(--sidebar);color:#ececf1;display:flex;flex-direction:column;padding:12px;gap:12px}.new-chat{height:44px;border:1px solid rgba(255,255,255,.22);border-radius:8px;background:transparent;color:#ececf1;display:flex;align-items:center;gap:10px;padding:0 12px;font-weight:500}.side-title{font-size:13px;color:#c5c5d2;padding:8px 4px}.side-link{color:#ececf1;border-radius:8px;padding:10px 12px;text-decoration:none;font-size:14px}.side-link:hover{background:var(--sidebar-soft)}.side-footer{margin-top:auto;color:#9ca3af;font-size:12px;line-height:1.5;padding:8px 4px}.main-chat{min-width:0;display:flex;flex-direction:column;height:100vh}.topbar{height:56px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 20px;background:rgba(255,255,255,.8);backdrop-filter:blur(12px)}.brand{font-size:17px;font-weight:650}.muted{color:var(--muted)}.small{font-size:13px}.pill{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:7px 10px;color:var(--muted);font-size:13px;background:#fff}.dot{width:8px;height:8px;border-radius:99px;background:var(--danger)}.dot.ok{background:var(--good)}#chat{flex:1;overflow:auto;padding:0;background:var(--bg)}.msg{display:flex;border-bottom:1px solid rgba(0,0,0,.04)}.msg-inner{width:min(820px,100%);margin:0 auto;display:grid;grid-template-columns:38px minmax(0,1fr);gap:18px;padding:24px 20px}.avatar{width:32px;height:32px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:white;flex:none}.user .avatar{background:#5436da}.assistant .avatar{background:var(--accent)}.sys .avatar{background:#8e8ea0}.bubble{white-space:pre-wrap;line-height:1.68;font-size:15.5px;overflow-wrap:anywhere}.assistant{background:var(--assistant)}.user,.sys{background:var(--user)}.sys .bubble{color:var(--muted)}.composer-wrap{border-top:1px solid var(--border);background:linear-gradient(180deg,rgba(247,247,248,0),var(--bg) 18%);padding:18px 18px 24px}.composer{width:min(820px,100%);margin:0 auto;position:relative;border:1px solid #d9d9e3;border-radius:14px;background:#fff;box-shadow:0 8px 28px rgba(0,0,0,.08);display:flex;align-items:flex-end;padding:10px 52px 10px 14px}.attach-button{width:34px;height:34px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:22px;line-height:1;cursor:pointer;margin-right:8px}.attach-button:hover{background:var(--surface-alt);color:var(--text)}.composer textarea{width:100%;min-height:28px;max-height:180px;height:28px;resize:none;border:0;outline:0;background:transparent;color:var(--text);font:inherit;line-height:1.5;padding:2px 0}.send-button{position:absolute;right:10px;bottom:9px;width:34px;height:34px;border:0;border-radius:8px;background:var(--accent);color:white;font-weight:800;cursor:pointer}.send-button:disabled{background:#d9d9e3;cursor:not-allowed}.attachment-preview{width:min(820px,100%);margin:0 auto 10px;display:flex;gap:8px;flex-wrap:wrap}.attachment-thumb{position:relative;border:1px solid var(--border);border-radius:10px;background:#fff;padding:4px;box-shadow:0 4px 16px rgba(0,0,0,.06)}.attachment-thumb img{width:74px;height:74px;object-fit:cover;border-radius:7px;display:block}.attachment-remove{position:absolute;right:-7px;top:-7px;width:22px;height:22px;border:0;border-radius:99px;background:#202123;color:white;cursor:pointer}.message-image{display:block;max-width:min(420px,100%);max-height:360px;border-radius:12px;margin:8px 0;border:1px solid var(--border)}.message-text{white-space:pre-wrap}.hint{width:min(820px,100%);margin:8px auto 0;text-align:center;color:var(--muted);font-size:12px}.login{max-width:430px;margin:12vh auto;background:white;border:1px solid var(--border);border-radius:16px;box-shadow:0 16px 50px rgba(0,0,0,.08);padding:24px}input{width:100%;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--text);padding:13px 14px;font:inherit}button{font:inherit}.login button{border:0;border-radius:10px;background:var(--accent);color:white;font-weight:700;cursor:pointer}.error{color:#dc2626}a{color:#0d8f6f;text-decoration:none}.changelog-page{min-height:100vh;background:var(--bg);padding:42px 18px}.changelog-hero,.release-list{width:min(860px,100%);margin:0 auto}.changelog-hero{padding:24px 0}.changelog-hero h1{font-size:38px;letter-spacing:-.04em;margin:18px 0 8px}.back-link{display:inline-flex;color:#0d8f6f;text-decoration:none;margin-bottom:10px}.release-card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:22px 24px;margin:0 0 16px;box-shadow:0 10px 30px rgba(0,0,0,.04)}.release-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:14px}.release-head h2{margin:0;font-size:24px}.release-card h3{font-size:15px;margin:8px 0;color:var(--text)}.release-card li{margin:7px 0;line-height:1.6}code{background:#ececf1;border-radius:6px;padding:2px 6px}@media(max-width:760px){.chatgpt-shell{grid-template-columns:1fr}.sidebar{display:none}.topbar{padding:0 14px}.msg-inner{grid-template-columns:32px minmax(0,1fr);gap:12px;padding:20px 14px}.composer-wrap{padding:14px 12px 18px}}.settings-page{min-height:100vh;background:var(--bg);padding:28px}.settings-hero{max-width:980px;margin:0 auto 18px}.settings-grid{max-width:980px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}.settings-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px;box-shadow:0 8px 30px rgba(0,0,0,.04)}.settings-card h2{margin:0 0 10px;font-size:18px}.settings-row{display:flex;justify-content:space-between;gap:16px;border-top:1px solid var(--border);padding:10px 0}.settings-row:first-of-type{border-top:0}.settings-key{color:var(--muted)}.settings-value{text-align:right;overflow-wrap:anywhere}.settings-changelog{max-width:980px;margin:18px auto 0}.settings-changelog .release-list{display:grid;gap:14px}
+:root{color-scheme:light;--bg:#f7f7f8;--sidebar:#202123;--sidebar-soft:#2a2b32;--surface:#ffffff;--surface-alt:#f7f7f8;--border:#e5e5e5;--text:#202123;--muted:#6e6e80;--assistant:#f7f7f8;--user:#ffffff;--accent:#10a37f;--accent-dark:#0d8f6f;--danger:#ef4444;--good:#10a37f}*{box-sizing:border-box}html,body{height:100%}body{margin:0;background:var(--bg);font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--text)}main{height:100%;padding:0}.chatgpt-shell{height:100vh;display:grid;grid-template-columns:260px minmax(0,1fr);background:var(--bg)}.sidebar{background:var(--sidebar);color:#ececf1;display:flex;flex-direction:column;padding:12px;gap:12px}.new-chat{height:44px;border:1px solid rgba(255,255,255,.22);border-radius:8px;background:transparent;color:#ececf1;display:flex;align-items:center;gap:10px;padding:0 12px;font-weight:500}.side-title{font-size:13px;color:#c5c5d2;padding:8px 4px}.side-link{color:#ececf1;border-radius:8px;padding:10px 12px;text-decoration:none;font-size:14px}.side-link:hover{background:var(--sidebar-soft)}.side-footer{margin-top:auto;color:#9ca3af;font-size:12px;line-height:1.5;padding:8px 4px}.main-chat{min-width:0;display:flex;flex-direction:column;height:100vh}.topbar{height:56px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 20px;background:rgba(255,255,255,.8);backdrop-filter:blur(12px)}.brand{font-size:17px;font-weight:650}.muted{color:var(--muted)}.small{font-size:13px}.pill{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:7px 10px;color:var(--muted);font-size:13px;background:#fff}.dot{width:8px;height:8px;border-radius:99px;background:var(--danger)}.dot.ok{background:var(--good)}#chat{flex:1;overflow:auto;padding:0;background:var(--bg)}.msg{display:flex;border-bottom:1px solid rgba(0,0,0,.04)}.msg-inner{width:min(820px,100%);margin:0 auto;display:grid;grid-template-columns:38px minmax(0,1fr);gap:18px;padding:24px 20px}.avatar{width:32px;height:32px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:white;flex:none}.user .avatar{background:#5436da}.assistant .avatar{background:var(--accent)}.sys .avatar{background:#8e8ea0}.bubble{white-space:pre-wrap;line-height:1.68;font-size:15.5px;overflow-wrap:anywhere}.assistant{background:var(--assistant)}.user,.sys{background:var(--user)}.sys .bubble{color:var(--muted)}.composer-wrap{border-top:1px solid var(--border);background:linear-gradient(180deg,rgba(247,247,248,0),var(--bg) 18%);padding:18px 18px 24px}.composer{width:min(820px,100%);margin:0 auto;position:relative;border:1px solid #d9d9e3;border-radius:14px;background:#fff;box-shadow:0 8px 28px rgba(0,0,0,.08);display:flex;align-items:flex-end;padding:10px 52px 10px 14px}.attach-button{width:34px;height:34px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:22px;line-height:1;cursor:pointer;margin-right:8px}.attach-button:hover{background:var(--surface-alt);color:var(--text)}.composer textarea{width:100%;min-height:28px;max-height:180px;height:28px;resize:none;border:0;outline:0;background:transparent;color:var(--text);font:inherit;line-height:1.5;padding:2px 0}.send-button{position:absolute;right:10px;bottom:9px;width:34px;height:34px;border:0;border-radius:8px;background:var(--accent);color:white;font-weight:800;cursor:pointer}.send-button:disabled{background:#d9d9e3;cursor:not-allowed}.attachment-preview{width:min(820px,100%);margin:0 auto 10px;display:flex;gap:8px;flex-wrap:wrap}.attachment-thumb{position:relative;border:1px solid var(--border);border-radius:10px;background:#fff;padding:4px;box-shadow:0 4px 16px rgba(0,0,0,.06)}.attachment-thumb img{width:74px;height:74px;object-fit:cover;border-radius:7px;display:block}.attachment-remove{position:absolute;right:-7px;top:-7px;width:22px;height:22px;border:0;border-radius:99px;background:#202123;color:white;cursor:pointer}.message-image{display:block;max-width:min(420px,100%);max-height:360px;border-radius:12px;margin:8px 0;border:1px solid var(--border)}.message-text{white-space:pre-wrap}.hint{width:min(820px,100%);margin:8px auto 0;text-align:center;color:var(--muted);font-size:12px}.login{max-width:430px;margin:12vh auto;background:white;border:1px solid var(--border);border-radius:16px;box-shadow:0 16px 50px rgba(0,0,0,.08);padding:24px}input{width:100%;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--text);padding:13px 14px;font:inherit}button{font:inherit}.login button{border:0;border-radius:10px;background:var(--accent);color:white;font-weight:700;cursor:pointer}.error{color:#dc2626}a{color:#0d8f6f;text-decoration:none}.changelog-page{min-height:100vh;background:var(--bg);padding:42px 18px}.changelog-hero,.release-list{width:min(860px,100%);margin:0 auto}.changelog-hero{padding:24px 0}.changelog-hero h1{font-size:38px;letter-spacing:-.04em;margin:18px 0 8px}.back-link{display:inline-flex;color:#0d8f6f;text-decoration:none;margin-bottom:10px}.release-card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:22px 24px;margin:0 0 16px;box-shadow:0 10px 30px rgba(0,0,0,.04)}.release-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:14px}.release-head h2{margin:0;font-size:24px}.release-card h3{font-size:15px;margin:8px 0;color:var(--text)}.release-card li{margin:7px 0;line-height:1.6}code{background:#ececf1;border-radius:6px;padding:2px 6px}.model-toolbar{display:flex;align-items:center;gap:8px}.model-label{color:var(--muted);font-size:13px}.model-select{min-width:190px;max-width:280px;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--text);padding:8px 32px 8px 10px;font:inherit;font-size:13px}.model-select:disabled{color:var(--muted);background:#f3f4f6}.topbar-actions{display:flex;align-items:center;gap:12px}@media(max-width:760px){.chatgpt-shell{grid-template-columns:1fr}.sidebar{display:none}.topbar{padding:0 14px}.msg-inner{grid-template-columns:32px minmax(0,1fr);gap:12px;padding:20px 14px}.composer-wrap{padding:14px 12px 18px}}.settings-page{min-height:100vh;background:var(--bg);padding:28px}.settings-hero{max-width:980px;margin:0 auto 18px}.settings-grid{max-width:980px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}.settings-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px;box-shadow:0 8px 30px rgba(0,0,0,.04)}.settings-card h2{margin:0 0 10px;font-size:18px}.settings-row{display:flex;justify-content:space-between;gap:16px;border-top:1px solid var(--border);padding:10px 0}.settings-row:first-of-type{border-top:0}.settings-key{color:var(--muted)}.settings-value{text-align:right;overflow-wrap:anywhere}.settings-changelog{max-width:980px;margin:18px auto 0}.settings-changelog .release-list{display:grid;gap:14px}
 """
 
 
@@ -355,7 +393,13 @@ async def index(request: Request) -> str:
       <section class='main-chat'>
         <header class='topbar'>
           <div><div class='brand'>Hermes WebUI</div><div class='muted small'>模仿 ChatGPT 的简洁对话界面</div></div>
-          <span id='status' class='pill'><span class='dot'></span><span>checking</span></span>
+          <div class='topbar-actions'>
+            <label class='model-toolbar' title='选择本次对话使用的大模型'>
+              <span class='model-label'>模型</span>
+              <select id='modelSelect' class='model-select'><option value='{SETTINGS['HERMES_MODEL']}'>加载模型中...</option></select>
+            </label>
+            <span id='status' class='pill'><span class='dot'></span><span>checking</span></span>
+          </div>
         </header>
         <div id='chat'><div class='msg sys'><div class='msg-inner'><div class='avatar'>H</div><div class='bubble'>已连接 WebUI。你可以在这里向 Hermes 发消息；Hermes 仍然能使用服务器工具。</div></div></div></div>
         <div class='composer-wrap'>
@@ -371,9 +415,12 @@ async def index(request: Request) -> str:
       </section>
     </div>
     <script>
-    const chat=document.getElementById('chat'), form=document.getElementById('sendForm'), msg=document.getElementById('message'), btn=document.getElementById('sendBtn'), statusEl=document.getElementById('status'), imageInput=document.getElementById('imageInput'), attachmentPreview=document.getElementById('attachmentPreview');
+    const chat=document.getElementById('chat'), form=document.getElementById('sendForm'), msg=document.getElementById('message'), btn=document.getElementById('sendBtn'), statusEl=document.getElementById('status'), imageInput=document.getElementById('imageInput'), attachmentPreview=document.getElementById('attachmentPreview'), modelSelect=document.getElementById('modelSelect');
     const history=[]; const selectedImages=[];
+    let selectedModel={SETTINGS['HERMES_MODEL']!r};
     const MAX_IMAGE_UPLOAD_BYTES=900000, MAX_IMAGE_DIMENSION=1280;
+    async function loadModels(){{ try{{ const r=await fetch('/api/models'); const j=await r.json(); const models=j.models&&j.models.length?j.models:[j.current_model||selectedModel]; selectedModel=j.current_model||models[0]||selectedModel; modelSelect.innerHTML=''; for(const model of models){{ const option=document.createElement('option'); option.value=model; option.textContent=model; if(model===selectedModel) option.selected=true; modelSelect.appendChild(option); }} modelSelect.disabled=false; }}catch(e){{ modelSelect.innerHTML=''; const option=document.createElement('option'); option.value=selectedModel; option.textContent=selectedModel+' (默认)'; option.selected=true; modelSelect.appendChild(option); modelSelect.disabled=false; console.warn('model load failed', e); }} }}
+    modelSelect.addEventListener('change',()=>{{ selectedModel=modelSelect.value||selectedModel; }});
     function avatarFor(role){{ return role==='user'?'你':(role==='assistant'?'H':'i'); }}
     function textFromContent(content){{ if(typeof content==='string') return content; if(Array.isArray(content)) return content.filter(p=>p.type==='text').map(p=>p.text||'').join('\\n'); return ''; }}
     function renderContent(container, content){{ container.innerHTML=''; if(typeof content==='string'){{ const mediaMatch=content.match(/^([\\s\\S]*?)\\n*MEDIA:(\\/[^\\r\\n]+)\\s*$/m); if(mediaMatch){{ const text=mediaMatch[1].trim(); if(text){{ const div=document.createElement('div'); div.className='message-text'; div.textContent=text; container.appendChild(div); }} const div=document.createElement('div'); div.className='message-text'; div.textContent='图片需要刷新历史后显示：'+mediaMatch[2]; container.appendChild(div); return; }} container.textContent=content; return; }} if(Array.isArray(content)){{ for(const part of content){{ if(part.type==='text' && part.text){{ const div=document.createElement('div'); div.className='message-text'; div.textContent=part.text; container.appendChild(div); }} if(part.type==='image_url' && part.image_url && part.image_url.url){{ const img=document.createElement('img'); img.className='message-image'; img.src=part.image_url.url; img.alt='图片'; container.appendChild(img); }} }} return; }} container.textContent=String(content||''); }}
@@ -389,12 +436,12 @@ async def index(request: Request) -> str:
     imageInput.addEventListener('change', async e=>{{ const files=Array.from(e.target.files||[]).filter(f=>f.type.startsWith('image/')); for(const file of files) selectedImages.push(await readImageFile(file)); imageInput.value=''; updateAttachmentPreview(); msg.focus(); }});
     msg.addEventListener('input', resizeComposer);
     msg.addEventListener('keydown', e=>{{ if(e.key==='Enter' && !e.shiftKey){{ e.preventDefault(); form.requestSubmit(); }} }});
-    loadHistory(); health(); setInterval(health,15000); resizeComposer();
+    loadModels(); loadHistory(); health(); setInterval(health,15000); resizeComposer();
     form.addEventListener('submit', async e=>{{
       e.preventDefault(); const text=msg.value.trim(); if((!text && selectedImages.length===0) || btn.disabled) return; const parts=[]; if(text) parts.push({{type:'text', text}}); for(const image of selectedImages) parts.push({{type:'image_url', image_url:{{url:image.url}}}}); const userContent=parts.length===1 && parts[0].type==='text' ? text : parts; msg.value=''; selectedImages.length=0; updateAttachmentPreview(); resizeComposer(); add('user', userContent); const b=add('assistant','思考中...'); btn.disabled=true;
       try{{
         history.push({{role:'user', content:userContent}});
-        const r=await fetch('/api/chat', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{messages:history}})}});
+        const r=await fetch('/api/chat', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{messages:history, model: selectedModel}})}});
         const j=await r.json(); if(!r.ok) throw new Error(j.error||r.statusText);
         renderContent(b, j.content||''); history.push({{role:'assistant', content:j.content||''}});
       }}catch(err){{ b.textContent='错误：'+err.message; }} finally{{ btn.disabled=false; msg.focus(); }}
@@ -471,6 +518,7 @@ async def api_settings(request: Request) -> JSONResponse:
         'auth_enabled': auth_enabled(),
         'api_base': SETTINGS['HERMES_API_BASE'],
         'model': SETTINGS['HERMES_MODEL'],
+        'models_endpoint': '/api/models',
         'api_key': mask_secret(SETTINGS['HERMES_API_KEY']),
         'max_history_messages': MAX_HISTORY_MESSAGES,
         'changelog': CHANGELOG,
@@ -548,6 +596,22 @@ async def logout(request: Request) -> RedirectResponse:
     return RedirectResponse('/login' if auth_enabled() else '/', status_code=302)
 
 
+@app.get('/api/models')
+async def api_models(request: Request) -> JSONResponse:
+    if not is_logged_in(request):
+        return JSONResponse({'error': 'unauthorized'}, status_code=401)
+    headers = {'Authorization': f"Bearer {SETTINGS['HERMES_API_KEY']}"} if SETTINGS['HERMES_API_KEY'] else {}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(f"{SETTINGS['HERMES_API_BASE'].rstrip()}/v1/models", headers=headers)
+        if r.status_code >= 400:
+            return JSONResponse({'current_model': SETTINGS['HERMES_MODEL'], 'models': [SETTINGS['HERMES_MODEL']], 'error': r.text}, status_code=200)
+        models = parse_models_response(r.json())
+        return JSONResponse({'current_model': SETTINGS['HERMES_MODEL'], 'models': models})
+    except Exception as exc:
+        return JSONResponse({'current_model': SETTINGS['HERMES_MODEL'], 'models': [SETTINGS['HERMES_MODEL']], 'error': str(exc)}, status_code=200)
+
+
 @app.get('/api/health')
 async def api_health(request: Request) -> JSONResponse:
     if not is_logged_in(request):
@@ -597,7 +661,8 @@ async def api_chat(request: Request) -> JSONResponse:
     if not messages:
         return JSONResponse({'error': 'messages required'}, status_code=400)
     headers = {'Authorization': f"Bearer {SETTINGS['HERMES_API_KEY']}"} if SETTINGS['HERMES_API_KEY'] else {}
-    body = {'model': SETTINGS['HERMES_MODEL'], 'messages': prepare_messages_for_api(messages), 'stream': False}
+    selected_model = normalize_model_id(payload.get('model'))
+    body = {'model': selected_model, 'messages': prepare_messages_for_api(messages), 'stream': False}
     if not body['messages']:
         return JSONResponse({'error': 'no valid messages after normalization'}, status_code=400)
     try:

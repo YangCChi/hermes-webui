@@ -46,10 +46,11 @@ class ChangelogPageTests(unittest.TestCase):
         self.assertIn('versions', data)
         self.assertGreaterEqual(len(data['versions']), 1)
         latest = data['versions'][0]
-        self.assertEqual(latest['version'], 'v0.0.5')
+        self.assertEqual(latest['version'], 'v0.0.6')
         self.assertIn('updated_at', latest)
         self.assertIn('changes', latest)
-        self.assertTrue(any('新增设置页' in item for item in latest['changes']))
+        self.assertTrue(any('模型选择器' in item for item in latest['changes']))
+        self.assertTrue(any(version['version'] == 'v0.0.5' for version in data['versions']))
         self.assertTrue(any(version['version'] == 'v0.0.4' for version in data['versions']))
         self.assertTrue(any(version['version'] == 'v0.0.3' for version in data['versions']))
         self.assertTrue(any(version['version'] == 'v0.0.1' for version in data['versions']))
