@@ -9,6 +9,7 @@ This project was built for a self-hosted Hermes Agent running on a Linux server.
 - Simple single-page chat interface
 - Talks to Hermes through the OpenAI-compatible `/v1/chat/completions` endpoint
 - Health indicator for the local Hermes API server
+- Persistent chat history across browser refreshes
 - Optional password login
 - Systemd-friendly deployment
 - No frontend build step required
@@ -90,6 +91,16 @@ WEBUI_SESSION_SECRET=replace-with-a-long-random-secret
 ```
 
 Restart the service after changing `.env`.
+
+## Chat history
+
+The app saves recent chat messages to:
+
+```text
+/opt/hermes-webui/chat-history.json
+```
+
+The history file is intentionally ignored by git. Delete the file or call `POST /api/history/clear` if you want to clear the saved conversation.
 
 ## Example systemd service
 

@@ -1,4 +1,6 @@
 .env
+chat-history.json
+chat-history.json.tmp
 venv/
 __pycache__/
 *.pyc

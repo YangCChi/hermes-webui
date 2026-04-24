@@ -19,6 +19,8 @@ from starlette.middleware.sessions import SessionMiddleware
 BASE_DIR = Path('/opt/hermes-webui')
 ENV_FILE = BASE_DIR / '.env'
 HERMES_ENV_FILE = Path('/root/.hermes/.env')
+HISTORY_FILE = BASE_DIR / 'chat-history.json'
+MAX_HISTORY_MESSAGES = 200
 DEFAULT_API_BASE = 'http://127.0.0.1:8642'
 
 
@@ -75,6 +77,43 @@ def mask_secret(value: str) -> str:
         return '[set]'
     return f'{value[:4]}...{value[-4:]}'
 
+
+def normalize_messages(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
+    normalized: list[dict[str, str]] = []
+    for message in messages:
+        role = str(message.get('role', '')).strip()
+        content = str(message.get('content', ''))
+        if role in {'user', 'assistant', 'system'} and content:
+            normalized.append({'role': role, 'content': content})
+    return normalized[-MAX_HISTORY_MESSAGES:]
+
+
+def read_history() -> list[dict[str, str]]:
+    if not HISTORY_FILE.exists():
+        return []
+    try:
+        data = json.loads(HISTORY_FILE.read_text())
+        if isinstance(data, list):
+            return normalize_messages(data)
+    except Exception:
+        return []
+    return []
+
+
+def write_history(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
+    normalized = normalize_messages(messages)
+    HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = HISTORY_FILE.with_suffix('.json.tmp')
+    tmp.write_text(json.dumps(normalized, ensure_ascii=False, indent=2))
+    tmp.replace(HISTORY_FILE)
+    return normalized
+
+
+def append_history(*messages: dict[str, Any]) -> list[dict[str, str]]:
+    history = read_history()
+    history.extend(messages)
+    return write_history(history)
+
 SETTINGS = load_settings()
 app = FastAPI(title='Hermes WebUI')
 app.add_middleware(SessionMiddleware, secret_key=SETTINGS['WEBUI_SESSION_SECRET'], same_site='lax')
@@ -117,8 +156,10 @@ async def index(request: Request) -> str:
     const chat=document.getElementById('chat'), form=document.getElementById('sendForm'), msg=document.getElementById('message'), btn=document.getElementById('sendBtn'), statusEl=document.getElementById('status');
     const history=[];
     function add(role, text){{ const wrap=document.createElement('div'); wrap.className='msg '+role; const b=document.createElement('div'); b.className='bubble'; b.textContent=text; wrap.appendChild(b); chat.appendChild(wrap); chat.scrollTop=chat.scrollHeight; return b; }}
+    function renderHistory(items){{ chat.innerHTML='<div class="msg sys"><div class="bubble">历史消息已加载。你可以继续上次的对话。</div></div>'; history.length=0; for(const item of items){{ history.push(item); add(item.role, item.content); }} }}
+    async function loadHistory(){{ try{{ const r=await fetch('/api/history'); const j=await r.json(); if(r.ok) renderHistory(j.messages||[]); }}catch(e){{ console.warn('history load failed', e); }} }}
     async function health(){{ try{{ let r=await fetch('/api/health'); let j=await r.json(); statusEl.innerHTML='<span class="dot ok"></span><span>'+j.status+'</span>'; }}catch(e){{ statusEl.innerHTML='<span class="dot"></span><span>offline</span>'; }} }}
-    health(); setInterval(health,15000);
+    loadHistory(); health(); setInterval(health,15000);
     form.addEventListener('submit', async e=>{{
       e.preventDefault(); const text=msg.value.trim(); if(!text) return; msg.value=''; add('user', text); const b=add('assistant','思考中...'); btn.disabled=true;
       try{{
@@ -177,6 +218,21 @@ async def api_health(request: Request) -> JSONResponse:
         return JSONResponse({'status': 'offline', 'error': str(exc)}, status_code=503)
 
 
+@app.get('/api/history')
+async def api_history(request: Request) -> JSONResponse:
+    if not is_logged_in(request):
+        return JSONResponse({'error': 'unauthorized'}, status_code=401)
+    return JSONResponse({'messages': read_history()})
+
+
+@app.post('/api/history/clear')
+async def api_history_clear(request: Request) -> JSONResponse:
+    if not is_logged_in(request):
+        return JSONResponse({'error': 'unauthorized'}, status_code=401)
+    write_history([])
+    return JSONResponse({'messages': []})
+
+
 @app.post('/api/chat')
 async def api_chat(request: Request) -> JSONResponse:
     if not is_logged_in(request):
@@ -194,6 +250,7 @@ async def api_chat(request: Request) -> JSONResponse:
             return JSONResponse({'error': r.text}, status_code=502)
         data = r.json()
         content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+        append_history(messages[-1], {'role': 'assistant', 'content': content})
         return JSONResponse({'content': content, 'raw': data})
     except Exception as exc:
         return JSONResponse({'error': str(exc)}, status_code=500)
