@@ -23,41 +23,14 @@ HISTORY_FILE = BASE_DIR / 'chat-history.json'
 MAX_HISTORY_MESSAGES = 200
 DEFAULT_API_BASE = 'http://127.0.0.1:8642'
 
-APP_VERSION = 'v0.4.0'
+APP_VERSION = 'v0.0.1'
 CHANGELOG = [
     {
-        'version': 'v0.4.0',
-        'updated_at': '2026-04-24 13:26',
-        'changes': [
-            '新增版本更新日志页面，显示每次更新版本、更新时间和更新内容。',
-            '新增 /api/changelog 接口，方便前端或外部工具读取结构化更新记录。',
-            '在左侧侧边栏加入 Changelog 入口。',
-        ],
-    },
-    {
-        'version': 'v0.3.0',
+        'version': 'v0.0.1',
         'updated_at': '2026-04-24',
         'changes': [
-            '改成 ChatGPT 风格界面。',
-            '支持 Enter 发送消息，Shift + Enter 换行。',
-        ],
-    },
-    {
-        'version': 'v0.2.0',
-        'updated_at': '2026-04-24',
-        'changes': [
-            '新增聊天历史持久化。',
-            '刷新网页后自动恢复历史消息。',
-            '新增清空历史接口。',
-        ],
-    },
-    {
-        'version': 'v0.1.0',
-        'updated_at': '2026-04-24',
-        'changes': [
-            '初始 Hermes WebUI。',
-            '支持通过本地 Hermes OpenAI-compatible API 和 Agent 对话。',
-            '支持可选密码登录。',
+            '从 0.0.1 开始记录 Hermes WebUI 版本。',
+            '保留 ChatGPT 风格界面、聊天历史、版本更新日志和本地 Hermes API 对话能力。',
         ],
     },
 ]

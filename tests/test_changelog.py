@@ -26,10 +26,10 @@ class ChangelogPageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         html = response.text
         self.assertIn('版本更新日志', html)
-        self.assertIn('v0.4.0', html)
+        self.assertIn('v0.0.1', html)
         self.assertIn('更新时间', html)
         self.assertIn('更新内容', html)
-        self.assertIn('版本更新日志页面', html)
+        self.assertIn('从 0.0.1 开始记录', html)
         self.assertIn('/api/changelog', html)
 
     def test_changelog_api_returns_structured_versions(self):
@@ -44,10 +44,10 @@ class ChangelogPageTests(unittest.TestCase):
         self.assertIn('versions', data)
         self.assertGreaterEqual(len(data['versions']), 1)
         latest = data['versions'][0]
-        self.assertEqual(latest['version'], 'v0.4.0')
+        self.assertEqual(latest['version'], 'v0.0.1')
         self.assertIn('updated_at', latest)
         self.assertIn('changes', latest)
-        self.assertTrue(any('版本更新日志页面' in item for item in latest['changes']))
+        self.assertTrue(any('从 0.0.1 开始记录' in item for item in latest['changes']))
 
 
 if __name__ == '__main__':
