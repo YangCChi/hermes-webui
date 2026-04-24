@@ -23,6 +23,45 @@ HISTORY_FILE = BASE_DIR / 'chat-history.json'
 MAX_HISTORY_MESSAGES = 200
 DEFAULT_API_BASE = 'http://127.0.0.1:8642'
 
+APP_VERSION = 'v0.4.0'
+CHANGELOG = [
+    {
+        'version': 'v0.4.0',
+        'updated_at': '2026-04-24 13:26',
+        'changes': [
+            '新增版本更新日志页面，显示每次更新版本、更新时间和更新内容。',
+            '新增 /api/changelog 接口，方便前端或外部工具读取结构化更新记录。',
+            '在左侧侧边栏加入 Changelog 入口。',
+        ],
+    },
+    {
+        'version': 'v0.3.0',
+        'updated_at': '2026-04-24',
+        'changes': [
+            '改成 ChatGPT 风格界面。',
+            '支持 Enter 发送消息，Shift + Enter 换行。',
+        ],
+    },
+    {
+        'version': 'v0.2.0',
+        'updated_at': '2026-04-24',
+        'changes': [
+            '新增聊天历史持久化。',
+            '刷新网页后自动恢复历史消息。',
+            '新增清空历史接口。',
+        ],
+    },
+    {
+        'version': 'v0.1.0',
+        'updated_at': '2026-04-24',
+        'changes': [
+            '初始 Hermes WebUI。',
+            '支持通过本地 Hermes OpenAI-compatible API 和 Agent 对话。',
+            '支持可选密码登录。',
+        ],
+    },
+]
+
 
 def read_env_file(path: Path) -> dict[str, str]:
     data: dict[str, str] = {}
@@ -119,7 +158,7 @@ app = FastAPI(title='Hermes WebUI')
 app.add_middleware(SessionMiddleware, secret_key=SETTINGS['WEBUI_SESSION_SECRET'], same_site='lax')
 
 CSS = """
-:root{color-scheme:light;--bg:#f7f7f8;--sidebar:#202123;--sidebar-soft:#2a2b32;--surface:#ffffff;--surface-alt:#f7f7f8;--border:#e5e5e5;--text:#202123;--muted:#6e6e80;--assistant:#f7f7f8;--user:#ffffff;--accent:#10a37f;--accent-dark:#0d8f6f;--danger:#ef4444;--good:#10a37f}*{box-sizing:border-box}html,body{height:100%}body{margin:0;background:var(--bg);font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--text)}main{height:100%;padding:0}.chatgpt-shell{height:100vh;display:grid;grid-template-columns:260px minmax(0,1fr);background:var(--bg)}.sidebar{background:var(--sidebar);color:#ececf1;display:flex;flex-direction:column;padding:12px;gap:12px}.new-chat{height:44px;border:1px solid rgba(255,255,255,.22);border-radius:8px;background:transparent;color:#ececf1;display:flex;align-items:center;gap:10px;padding:0 12px;font-weight:500}.side-title{font-size:13px;color:#c5c5d2;padding:8px 4px}.side-footer{margin-top:auto;color:#9ca3af;font-size:12px;line-height:1.5;padding:8px 4px}.main-chat{min-width:0;display:flex;flex-direction:column;height:100vh}.topbar{height:56px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 20px;background:rgba(255,255,255,.8);backdrop-filter:blur(12px)}.brand{font-size:17px;font-weight:650}.muted{color:var(--muted)}.small{font-size:13px}.pill{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:7px 10px;color:var(--muted);font-size:13px;background:#fff}.dot{width:8px;height:8px;border-radius:99px;background:var(--danger)}.dot.ok{background:var(--good)}#chat{flex:1;overflow:auto;padding:0;background:var(--bg)}.msg{display:flex;border-bottom:1px solid rgba(0,0,0,.04)}.msg-inner{width:min(820px,100%);margin:0 auto;display:grid;grid-template-columns:38px minmax(0,1fr);gap:18px;padding:24px 20px}.avatar{width:32px;height:32px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:white;flex:none}.user .avatar{background:#5436da}.assistant .avatar{background:var(--accent)}.sys .avatar{background:#8e8ea0}.bubble{white-space:pre-wrap;line-height:1.68;font-size:15.5px;overflow-wrap:anywhere}.assistant{background:var(--assistant)}.user,.sys{background:var(--user)}.sys .bubble{color:var(--muted)}.composer-wrap{border-top:1px solid var(--border);background:linear-gradient(180deg,rgba(247,247,248,0),var(--bg) 18%);padding:18px 18px 24px}.composer{width:min(820px,100%);margin:0 auto;position:relative;border:1px solid #d9d9e3;border-radius:14px;background:#fff;box-shadow:0 8px 28px rgba(0,0,0,.08);display:flex;align-items:flex-end;padding:10px 52px 10px 14px}.composer textarea{width:100%;min-height:28px;max-height:180px;height:28px;resize:none;border:0;outline:0;background:transparent;color:var(--text);font:inherit;line-height:1.5;padding:2px 0}.send-button{position:absolute;right:10px;bottom:9px;width:34px;height:34px;border:0;border-radius:8px;background:var(--accent);color:white;font-weight:800;cursor:pointer}.send-button:disabled{background:#d9d9e3;cursor:not-allowed}.hint{width:min(820px,100%);margin:8px auto 0;text-align:center;color:var(--muted);font-size:12px}.login{max-width:430px;margin:12vh auto;background:white;border:1px solid var(--border);border-radius:16px;box-shadow:0 16px 50px rgba(0,0,0,.08);padding:24px}input{width:100%;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--text);padding:13px 14px;font:inherit}button{font:inherit}.login button{border:0;border-radius:10px;background:var(--accent);color:white;font-weight:700;cursor:pointer}.error{color:#dc2626}a{color:#0d8f6f;text-decoration:none}@media(max-width:760px){.chatgpt-shell{grid-template-columns:1fr}.sidebar{display:none}.topbar{padding:0 14px}.msg-inner{grid-template-columns:32px minmax(0,1fr);gap:12px;padding:20px 14px}.composer-wrap{padding:14px 12px 18px}}
+:root{color-scheme:light;--bg:#f7f7f8;--sidebar:#202123;--sidebar-soft:#2a2b32;--surface:#ffffff;--surface-alt:#f7f7f8;--border:#e5e5e5;--text:#202123;--muted:#6e6e80;--assistant:#f7f7f8;--user:#ffffff;--accent:#10a37f;--accent-dark:#0d8f6f;--danger:#ef4444;--good:#10a37f}*{box-sizing:border-box}html,body{height:100%}body{margin:0;background:var(--bg);font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--text)}main{height:100%;padding:0}.chatgpt-shell{height:100vh;display:grid;grid-template-columns:260px minmax(0,1fr);background:var(--bg)}.sidebar{background:var(--sidebar);color:#ececf1;display:flex;flex-direction:column;padding:12px;gap:12px}.new-chat{height:44px;border:1px solid rgba(255,255,255,.22);border-radius:8px;background:transparent;color:#ececf1;display:flex;align-items:center;gap:10px;padding:0 12px;font-weight:500}.side-title{font-size:13px;color:#c5c5d2;padding:8px 4px}.side-link{color:#ececf1;border-radius:8px;padding:10px 12px;text-decoration:none;font-size:14px}.side-link:hover{background:var(--sidebar-soft)}.side-footer{margin-top:auto;color:#9ca3af;font-size:12px;line-height:1.5;padding:8px 4px}.main-chat{min-width:0;display:flex;flex-direction:column;height:100vh}.topbar{height:56px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 20px;background:rgba(255,255,255,.8);backdrop-filter:blur(12px)}.brand{font-size:17px;font-weight:650}.muted{color:var(--muted)}.small{font-size:13px}.pill{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:7px 10px;color:var(--muted);font-size:13px;background:#fff}.dot{width:8px;height:8px;border-radius:99px;background:var(--danger)}.dot.ok{background:var(--good)}#chat{flex:1;overflow:auto;padding:0;background:var(--bg)}.msg{display:flex;border-bottom:1px solid rgba(0,0,0,.04)}.msg-inner{width:min(820px,100%);margin:0 auto;display:grid;grid-template-columns:38px minmax(0,1fr);gap:18px;padding:24px 20px}.avatar{width:32px;height:32px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:white;flex:none}.user .avatar{background:#5436da}.assistant .avatar{background:var(--accent)}.sys .avatar{background:#8e8ea0}.bubble{white-space:pre-wrap;line-height:1.68;font-size:15.5px;overflow-wrap:anywhere}.assistant{background:var(--assistant)}.user,.sys{background:var(--user)}.sys .bubble{color:var(--muted)}.composer-wrap{border-top:1px solid var(--border);background:linear-gradient(180deg,rgba(247,247,248,0),var(--bg) 18%);padding:18px 18px 24px}.composer{width:min(820px,100%);margin:0 auto;position:relative;border:1px solid #d9d9e3;border-radius:14px;background:#fff;box-shadow:0 8px 28px rgba(0,0,0,.08);display:flex;align-items:flex-end;padding:10px 52px 10px 14px}.composer textarea{width:100%;min-height:28px;max-height:180px;height:28px;resize:none;border:0;outline:0;background:transparent;color:var(--text);font:inherit;line-height:1.5;padding:2px 0}.send-button{position:absolute;right:10px;bottom:9px;width:34px;height:34px;border:0;border-radius:8px;background:var(--accent);color:white;font-weight:800;cursor:pointer}.send-button:disabled{background:#d9d9e3;cursor:not-allowed}.hint{width:min(820px,100%);margin:8px auto 0;text-align:center;color:var(--muted);font-size:12px}.login{max-width:430px;margin:12vh auto;background:white;border:1px solid var(--border);border-radius:16px;box-shadow:0 16px 50px rgba(0,0,0,.08);padding:24px}input{width:100%;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--text);padding:13px 14px;font:inherit}button{font:inherit}.login button{border:0;border-radius:10px;background:var(--accent);color:white;font-weight:700;cursor:pointer}.error{color:#dc2626}a{color:#0d8f6f;text-decoration:none}.changelog-page{min-height:100vh;background:var(--bg);padding:42px 18px}.changelog-hero,.release-list{width:min(860px,100%);margin:0 auto}.changelog-hero{padding:24px 0}.changelog-hero h1{font-size:38px;letter-spacing:-.04em;margin:18px 0 8px}.back-link{display:inline-flex;color:#0d8f6f;text-decoration:none;margin-bottom:10px}.release-card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:22px 24px;margin:0 0 16px;box-shadow:0 10px 30px rgba(0,0,0,.04)}.release-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:14px}.release-head h2{margin:0;font-size:24px}.release-card h3{font-size:15px;margin:8px 0;color:var(--text)}.release-card li{margin:7px 0;line-height:1.6}code{background:#ececf1;border-radius:6px;padding:2px 6px}@media(max-width:760px){.chatgpt-shell{grid-template-columns:1fr}.sidebar{display:none}.topbar{padding:0 14px}.msg-inner{grid-template-columns:32px minmax(0,1fr);gap:12px;padding:20px 14px}.composer-wrap{padding:14px 12px 18px}}
 """
 
 
@@ -144,7 +183,8 @@ async def index(request: Request) -> str:
       <aside class='sidebar'>
         <button class='new-chat' type='button' onclick='clearHistory()'><span>＋</span><span>New chat</span></button>
         <div class='side-title'>Hermes Agent</div>
-        <div class='side-footer'>ChatGPT-style interface<br>API: {SETTINGS['HERMES_API_BASE']}<br>Model: {SETTINGS['HERMES_MODEL']}<br>Key: {mask_secret(SETTINGS['HERMES_API_KEY'])}</div>
+        <a class='side-link' href='/changelog'>版本更新日志</a>
+        <div class='side-footer'>Version: {APP_VERSION}<br>ChatGPT-style interface<br>API: {SETTINGS['HERMES_API_BASE']}<br>Model: {SETTINGS['HERMES_MODEL']}<br>Key: {mask_secret(SETTINGS['HERMES_API_KEY'])}</div>
       </aside>
       <section class='main-chat'>
         <header class='topbar'>
@@ -187,6 +227,46 @@ async def index(request: Request) -> str:
     """
     return page_shell(body)
 
+
+
+@app.get('/changelog', response_class=HTMLResponse)
+async def changelog_page(request: Request) -> str:
+    if not is_logged_in(request):
+        return RedirectResponse('/login', status_code=302)
+    items = []
+    for release in CHANGELOG:
+        changes = ''.join(f"<li>{change}</li>" for change in release['changes'])
+        items.append(
+            f"""
+            <article class='release-card'>
+              <div class='release-head'>
+                <h2>{release['version']}</h2>
+                <span class='muted small'>更新时间：{release['updated_at']}</span>
+              </div>
+              <h3>更新内容</h3>
+              <ul>{changes}</ul>
+            </article>
+            """
+        )
+    body = f"""
+    <div class='changelog-page'>
+      <header class='changelog-hero'>
+        <a class='back-link' href='/'>← 返回聊天</a>
+        <h1>版本更新日志</h1>
+        <p class='muted'>每次发布都会记录版本、更新时间和更新内容。当前版本：{APP_VERSION}</p>
+        <p class='muted small'>结构化接口：<code>/api/changelog</code></p>
+      </header>
+      <section class='release-list'>{''.join(items)}</section>
+    </div>
+    """
+    return page_shell(body)
+
+
+@app.get('/api/changelog')
+async def api_changelog(request: Request) -> JSONResponse:
+    if not is_logged_in(request):
+        return JSONResponse({'error': 'unauthorized'}, status_code=401)
+    return JSONResponse({'current_version': APP_VERSION, 'versions': CHANGELOG})
 
 @app.get('/login', response_class=HTMLResponse)
 async def login_page(request: Request) -> str:
