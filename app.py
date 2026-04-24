@@ -6,17 +6,20 @@ import base64
 import hashlib
 import hmac
 import json
+import mimetypes
 import os
+import re
 import secrets
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, unquote
 
 MessageContent = str | list[dict[str, Any]]
 NormalizedMessage = dict[str, Any]
 
 import httpx
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 BASE_DIR = Path('/opt/hermes-webui')
@@ -26,8 +29,21 @@ HISTORY_FILE = BASE_DIR / 'chat-history.json'
 MAX_HISTORY_MESSAGES = 200
 DEFAULT_API_BASE = 'http://127.0.0.1:8642'
 
-APP_VERSION = 'v0.0.2'
+APP_VERSION = 'v0.0.3'
+MEDIA_TOKEN_PREFIX = 'local:'
+MEDIA_REFERENCE_RE = re.compile(r'(?m)^MEDIA:(?P<path>/[^\r\n]+)\s*$')
+ALLOWED_MEDIA_DIRS = (Path('/tmp'), Path('/var/tmp'), BASE_DIR / 'media')
+ALLOWED_IMAGE_MIME_TYPES = {'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'}
 CHANGELOG = [
+    {
+        'version': 'v0.0.3',
+        'updated_at': '2026-04-24',
+        'changes': [
+            '支持把助手返回的 MEDIA:/path 图片引用转换为可显示图片。',
+            '新增安全媒体读取接口，聊天区和历史记录可渲染助手生成的本地图片。',
+            '改进图片消息回归测试，覆盖发送图片和接收图片历史保存。',
+        ],
+    },
     {
         'version': 'v0.0.2',
         'updated_at': '2026-04-24',
@@ -122,10 +138,71 @@ def normalize_content(content: Any) -> MessageContent | None:
                     url = str(image_url.get('url', ''))
                 elif isinstance(image_url, str):
                     url = image_url
-                if url.startswith(('data:image/', 'http://', 'https://')):
+                if url.startswith(('data:image/', 'http://', 'https://', '/api/media/')):
                     normalized_parts.append({'type': 'image_url', 'image_url': {'url': url}})
         return normalized_parts or None
     return None
+
+
+def media_token_for_path(path: Path) -> str:
+    return MEDIA_TOKEN_PREFIX + quote(str(path.resolve()), safe='')
+
+
+def path_from_media_token(token: str) -> Path | None:
+    if not token.startswith(MEDIA_TOKEN_PREFIX):
+        return None
+    try:
+        return Path(unquote(token[len(MEDIA_TOKEN_PREFIX):])).resolve()
+    except Exception:
+        return None
+
+
+def is_allowed_media_path(path: Path) -> bool:
+    try:
+        resolved = path.resolve()
+        return any(resolved == root.resolve() or root.resolve() in resolved.parents for root in ALLOWED_MEDIA_DIRS)
+    except Exception:
+        return False
+
+
+def image_mime_type(path: Path) -> str | None:
+    mime, _ = mimetypes.guess_type(str(path))
+    if mime in ALLOWED_IMAGE_MIME_TYPES:
+        return mime
+    return None
+
+
+def media_url_for_path(path: Path) -> str | None:
+    if not path.exists() or not path.is_file() or not is_allowed_media_path(path):
+        return None
+    if image_mime_type(path) is None:
+        return None
+    return f'/api/media/{media_token_for_path(path)}'
+
+
+def normalize_assistant_content(content: Any) -> MessageContent | None:
+    if not isinstance(content, str):
+        return normalize_content(content)
+    parts: list[dict[str, Any]] = []
+    cursor = 0
+    for match in MEDIA_REFERENCE_RE.finditer(content):
+        text = content[cursor:match.start()].strip()
+        if text:
+            parts.append({'type': 'text', 'text': text})
+        media_url = media_url_for_path(Path(match.group('path')))
+        if media_url:
+            parts.append({'type': 'image_url', 'image_url': {'url': media_url}})
+        else:
+            literal = match.group(0).strip()
+            if literal:
+                parts.append({'type': 'text', 'text': literal})
+        cursor = match.end()
+    if not parts:
+        return normalize_content(content)
+    trailing = content[cursor:].strip()
+    if trailing:
+        parts.append({'type': 'text', 'text': trailing})
+    return parts or None
 
 
 def normalize_messages(messages: list[dict[str, Any]]) -> list[NormalizedMessage]:
@@ -220,7 +297,7 @@ async def index(request: Request) -> str:
     const history=[]; const selectedImages=[];
     function avatarFor(role){{ return role==='user'?'你':(role==='assistant'?'H':'i'); }}
     function textFromContent(content){{ if(typeof content==='string') return content; if(Array.isArray(content)) return content.filter(p=>p.type==='text').map(p=>p.text||'').join('\\n'); return ''; }}
-    function renderContent(container, content){{ container.innerHTML=''; if(typeof content==='string'){{ container.textContent=content; return; }} if(Array.isArray(content)){{ for(const part of content){{ if(part.type==='text' && part.text){{ const div=document.createElement('div'); div.className='message-text'; div.textContent=part.text; container.appendChild(div); }} if(part.type==='image_url' && part.image_url && part.image_url.url){{ const img=document.createElement('img'); img.className='message-image'; img.src=part.image_url.url; img.alt='用户发送的图片'; container.appendChild(img); }} }} return; }} container.textContent=String(content||''); }}
+    function renderContent(container, content){{ container.innerHTML=''; if(typeof content==='string'){{ const mediaMatch=content.match(/^([\\s\\S]*?)\\n*MEDIA:(\\/[^\\r\\n]+)\\s*$/m); if(mediaMatch){{ const text=mediaMatch[1].trim(); if(text){{ const div=document.createElement('div'); div.className='message-text'; div.textContent=text; container.appendChild(div); }} const div=document.createElement('div'); div.className='message-text'; div.textContent='图片需要刷新历史后显示：'+mediaMatch[2]; container.appendChild(div); return; }} container.textContent=content; return; }} if(Array.isArray(content)){{ for(const part of content){{ if(part.type==='text' && part.text){{ const div=document.createElement('div'); div.className='message-text'; div.textContent=part.text; container.appendChild(div); }} if(part.type==='image_url' && part.image_url && part.image_url.url){{ const img=document.createElement('img'); img.className='message-image'; img.src=part.image_url.url; img.alt='图片'; container.appendChild(img); }} }} return; }} container.textContent=String(content||''); }}
     function add(role, content){{ const wrap=document.createElement('div'); wrap.className='msg '+role; const inner=document.createElement('div'); inner.className='msg-inner'; const avatar=document.createElement('div'); avatar.className='avatar'; avatar.textContent=avatarFor(role); const b=document.createElement('div'); b.className='bubble'; renderContent(b, content); inner.appendChild(avatar); inner.appendChild(b); wrap.appendChild(inner); chat.appendChild(wrap); chat.scrollTop=chat.scrollHeight; return b; }}
     function renderHistory(items){{ chat.innerHTML='<div class="msg sys"><div class="msg-inner"><div class="avatar">H</div><div class="bubble">历史消息已加载。你可以继续上次的对话。</div></div></div>'; history.length=0; for(const item of items){{ history.push(item); add(item.role, item.content); }} }}
     async function loadHistory(){{ try{{ const r=await fetch('/api/history'); const j=await r.json(); if(r.ok) renderHistory(j.messages||[]); }}catch(e){{ console.warn('history load failed', e); }} }}
@@ -346,6 +423,19 @@ async def api_history_clear(request: Request) -> JSONResponse:
     return JSONResponse({'messages': []})
 
 
+@app.get('/api/media/{token:path}')
+async def api_media(request: Request, token: str):
+    if not is_logged_in(request):
+        return JSONResponse({'error': 'unauthorized'}, status_code=401)
+    path = path_from_media_token(token)
+    if path is None or not path.exists() or not path.is_file() or not is_allowed_media_path(path):
+        return JSONResponse({'error': 'media not found'}, status_code=404)
+    mime = image_mime_type(path)
+    if mime is None:
+        return JSONResponse({'error': 'unsupported media type'}, status_code=415)
+    return FileResponse(path, media_type=mime)
+
+
 @app.post('/api/chat')
 async def api_chat(request: Request) -> JSONResponse:
     if not is_logged_in(request):
@@ -362,7 +452,8 @@ async def api_chat(request: Request) -> JSONResponse:
         if r.status_code >= 400:
             return JSONResponse({'error': r.text}, status_code=502)
         data = r.json()
-        content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+        raw_content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+        content = normalize_assistant_content(raw_content) or ''
         append_history(messages[-1], {'role': 'assistant', 'content': content})
         return JSONResponse({'content': content, 'raw': data})
     except Exception as exc:
