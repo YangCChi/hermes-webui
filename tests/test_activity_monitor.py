@@ -29,10 +29,34 @@ class ActivityMonitorTests(unittest.TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertIn("href='/activity'", home.text)
         self.assertIn('过程查看', home.text)
-        self.assertIn('Hermes 活动', page.text)
+        self.assertIn('Hermes 过程查看', page.text)
         self.assertIn("fetch('/api/activity')", page.text)
         self.assertIn('activity-list', page.text)
         self.assertIn('setInterval(loadActivity', page.text)
+
+    def test_activity_page_contains_visual_timeline_dashboard(self):
+        module = load_app_module()
+        module.SETTINGS['WEBUI_AUTH_ENABLED'] = 'false'
+        client = TestClient(module.app)
+
+        page = client.get('/activity')
+
+        self.assertEqual(page.status_code, 200)
+        html = page.text
+        for marker in [
+            'activity-dashboard',
+            'activity-commandbar',
+            'activityFilters',
+            'activityTimeline',
+            'activityMetricTotal',
+            'activityMetricTools',
+            'activityRefreshToggle',
+            'renderActivityTimeline',
+            'summarizeActivity',
+            'copyActivityContent',
+            '过程可视化改进方案',
+        ]:
+            self.assertIn(marker, html)
 
     def test_activity_api_returns_recent_sessions_and_messages(self):
         module = load_app_module()
